@@ -1,44 +1,133 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="ja">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>アプリ一覧</title>
-    <style>
-        body { font-family: sans-serif; max-width: 640px; margin: 40px auto; padding: 0 16px; color: #333; }
-        h1 { font-size: 1.4rem; }
-        ul { list-style: none; padding: 0; }
-        li { padding: 12px 0; border-bottom: 1px solid #eee; }
-        a { font-size: 1.1rem; text-decoration: none; color: #0366d6; }
-    </style>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="description" content="AIが作った絵描き歌に合わせて描こう。最後にお題のお手本と答え合わせ。">
+    <title>うたっておえかき — AI 絵描き歌</title>
+    <link rel="stylesheet" href="drawsong.css">
+    <script src="drawsong.js" defer></script>
 </head>
 <body>
-    <h1>アプリ一覧</h1>
-    <ul id="appList"></ul>
+    <div class="app-shell">
+        <header class="topbar">
+            <div class="brand"><span class="brand-icon" aria-hidden="true">♪</span><span>うたっておえかき</span></div>
+            <span class="topbar-label">ODD LITTLE ART CLUB</span>
+        </header>
 
-    <script>
-        // サーバーから .html ファイルの一覧を取得してリンクを表示する
-        async function loadPages() {
-            const response = await fetch('/api/pages');
-            const files = await response.json();
+        <main>
+            <section class="hero">
+                <p class="eyebrow"><span class="eyebrow-dot"></span> SING · SCRIBBLE · SURPRISE</p>
+                <h1>うたに合わせて、<br><span>描いてみよう。</span></h1>
+                <p>AIが今日のお題と絵描き歌をつくります。<br>歌のヒントをたよりに描いて、最後にお手本と答え合わせ。</p>
+                <div class="hero-doodle" aria-hidden="true"><span>♪</span><span>✳</span><span>◯</span></div>
+            </section>
 
-            const list = document.getElementById('appList');
-            if (files.length === 0) {
-                list.innerHTML = '<li>public/ に .html ファイルがありません。</li>';
-                return;
-            }
+            <section class="setup-card" id="setupCard" aria-labelledby="setupTitle">
+                <div class="section-heading">
+                    <div><p class="section-index">01 / SET THE MOOD</p><h2 id="setupTitle">どんな絵描き歌にする？</h2></div>
+                    <span class="heading-spark" aria-hidden="true">✳</span>
+                </div>
+                <form id="setupForm" class="setup-form">
+                    <div class="setup-fields">
+                        <label class="field"><span>お題のジャンル</span>
+                            <select name="genre">
+                                <option value="おまかせ">おまかせ</option>
+                                <option value="動物">動物</option>
+                                <option value="食べもの">食べもの</option>
+                                <option value="乗りもの">乗りもの</option>
+                                <option value="海のいきもの">海のいきもの</option>
+                                <option value="自然や季節">自然や季節</option>
+                            </select>
+                        </label>
+                        <label class="field"><span>むずかしさ</span>
+                            <select name="difficulty">
+                                <option value="かんたん">かんたん</option>
+                                <option value="ふつう" selected>ふつう</option>
+                                <option value="むずかしめ">むずかしめ</option>
+                            </select>
+                        </label>
+                    </div>
+                    <div class="setup-footer">
+                        <p><span aria-hidden="true">☁</span> お題は答え合わせまでひみつ！</p>
+                        <button class="primary-button" type="submit" id="generateButton"><span>絵描き歌をつくる</span><span aria-hidden="true">↗</span></button>
+                    </div>
+                </form>
+            </section>
 
-            files.forEach(name => {
-                const li = document.createElement('li');
-                const a = document.createElement('a');
-                a.href = name;
-                a.textContent = name;
-                li.appendChild(a);
-                list.appendChild(li);
-            });
-        }
+            <div class="notice" id="notice" role="status" aria-live="polite" hidden></div>
 
-        loadPages();
-    </script>
+            <section class="play-area" id="playArea" hidden aria-labelledby="playTitle">
+                <div class="play-heading">
+                    <div><p class="section-index">02 / SING & DRAW</p><h2 id="playTitle">歌をきいて描こう</h2></div>
+                    <span class="secret-label"><span aria-hidden="true">✦</span> お題はまだひみつ</span>
+                </div>
+
+                <div class="play-grid">
+                    <section class="song-card" aria-label="絵描き歌">
+                        <div class="song-card-top"><span>♪ 絵描き歌</span><span id="songCounter">1 / 1</span></div>
+                        <div class="song-progress" id="songProgress" aria-hidden="true"></div>
+                        <p class="lyric" id="currentLyric">歌詞を準備しています…</p>
+                        <p class="song-encouragement" id="songEncouragement">歌のとおりに、自由に描いてみてね。</p>
+                        <div class="song-controls">
+                            <button class="quiet-button" id="previousLine" type="button" disabled>← 前の行</button>
+                            <button class="primary-button next-button" id="nextLine" type="button">次の行へ <span aria-hidden="true">→</span></button>
+                        </div>
+                        <button class="reveal-link" id="revealEarly" type="button">先にお題とお手本を見る</button>
+                    </section>
+
+                    <section class="drawing-card" aria-label="お絵描きキャンバス">
+                        <div class="drawing-toolbar">
+                            <div class="tool-group" aria-label="ペンの色">
+                                <label class="color-control" for="brushColor"><span class="sr-only">ペンの色を選択</span><input id="brushColor" type="color" value="#333d52"></label>
+                                <button class="color-swatch" type="button" data-color="#8A7DD0" aria-label="ラベンダー"></button>
+                                <button class="color-swatch" type="button" data-color="#E98EAA" aria-label="ピンク"></button>
+                                <button class="color-swatch" type="button" data-color="#73B997" aria-label="ミント"></button>
+                                <button class="color-swatch" type="button" data-color="#D7AD42" aria-label="クリームイエロー"></button>
+                                <span class="tool-divider"></span>
+                                <button class="tool-button selected" id="penTool" type="button" aria-label="ペン" title="ペン">✎</button>
+                                <button class="tool-button" id="eraserTool" type="button" aria-label="消しゴム" title="消しゴム">◩</button>
+                            </div>
+                            <label class="size-control" for="brushSize"><span>太さ</span><input id="brushSize" type="range" min="3" max="24" value="9"><span id="brushSizeValue">9</span></label>
+                            <div class="tool-group">
+                                <button class="tool-button" id="undoButton" type="button" aria-label="一つ戻す" title="一つ戻す">↶</button>
+                                <button class="tool-button clear-button" id="clearButton" type="button" aria-label="全部消す" title="全部消す">⌫</button>
+                            </div>
+                        </div>
+                        <div class="canvas-frame">
+                            <canvas id="drawingCanvas" width="800" height="600" aria-label="ここに絵を描きます"></canvas>
+                            <span class="canvas-corner corner-tl" aria-hidden="true"></span><span class="canvas-corner corner-br" aria-hidden="true"></span>
+                        </div>
+                        <div class="canvas-footer"><span>指やマウスで自由に描けます</span><button id="downloadButton" class="download-button" type="button">絵を保存 ↓</button></div>
+                    </section>
+                </div>
+            </section>
+
+            <section class="answer-area" id="answerArea" hidden aria-labelledby="answerTitle">
+                <div class="answer-heading">
+                    <div><p class="section-index">03 / REVEAL</p><h2 id="answerTitle">じゃーん！ 答え合わせ</h2><p class="answer-topic" id="answerTopic"></p></div>
+                    <span class="reveal-burst" aria-hidden="true">TA-DA!<br>✳</span>
+                </div>
+                <div class="comparison-grid">
+                    <article class="comparison-card user-card">
+                        <div class="comparison-label"><span>YOUR ART</span><strong>あなたの絵</strong></div>
+                        <div class="comparison-canvas"><canvas id="myResultCanvas" width="800" height="600" aria-label="あなたが描いた絵"></canvas></div>
+                    </article>
+                    <div class="versus" aria-hidden="true">↔</div>
+                    <article class="comparison-card answer-card">
+                        <div class="comparison-label"><span>AI'S ANSWER</span><strong>お手本</strong></div>
+                        <div class="comparison-canvas"><canvas id="targetCanvas" width="800" height="600" aria-label="AIが作ったお手本"></canvas></div>
+                    </article>
+                </div>
+                <p class="answer-note" id="answerNote"></p>
+                <div class="answer-actions">
+                    <p>どんな絵になっても大正解。描いてくれてありがとう！</p>
+                    <button class="primary-button" id="newRound" type="button">もう一回あそぶ <span aria-hidden="true">↗</span></button>
+                </div>
+            </section>
+
+            <footer class="page-footer"><span>DRAW A LITTLE, SING A LITTLE</span><span aria-hidden="true">♪</span><span>じょうずより、たのしく。</span></footer>
+        </main>
+    </div>
 </body>
 </html>

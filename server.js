@@ -22,47 +22,36 @@ const MODEL = MODELS[PROVIDER];
 
 let promptTemplate;
 try {
-    promptTemplate = fs.readFileSync('prompt.md', 'utf8');
+    promptTemplate = fs.readFileSync('drawsong-prompt.md', 'utf8');
 } catch (error) {
-    console.error('Error reading prompt.md:', error);
+    console.error('Error reading drawsong-prompt.md:', error);
     process.exit(1);
 }
 
 const OPENAI_API_ENDPOINT = 'https://api.openai.com/v1/chat/completions';
 const GEMINI_API_BASE_URL = 'https://generativelanguage.googleapis.com/v1beta/models/';
 
-// public/ 内の .html 一覧を返す（index.html がこの一覧を使ってリンクを表示する）
-app.get('/api/pages', (req, res) => {
-    const files = fs.readdirSync('public')
-        .filter(name => name.endsWith('.html') && name !== 'index.html');
-    res.json(files);
-});
-
-// 問題数の上限（過剰なリクエストでトークンを浪費しないようにする）
-const MAX_COUNT = 20;
-
 app.post('/api/', async (req, res) => {
     try {
-        // title と、変数置換に使うその他のキーを受け取る
-        // （prompt.md がプロンプトを定義するので、リクエストでの上書きは許可しない）
-        const { title = 'Generated Content', ...variables } = req.body;
-
-        // count が指定されている場合は 1〜MAX_COUNT の範囲に収める
-        if (variables.count !== undefined) {
-            const count = Number(variables.count);
-            if (!Number.isInteger(count) || count < 1 || count > MAX_COUNT) {
-                return res.status(400).json({
-                    error: `count must be an integer between 1 and ${MAX_COUNT}`,
-                });
-            }
+        const { title = 'AI 絵描き歌', ...variables } = req.body;
+        if (!['動物', '食べもの', '乗りもの', '海のいきもの', '自然や季節'].includes(variables.genre)) {
+            return res.status(400).json({ error: 'genre must be a supported drawing category' });
+        }
+        if (!['かんたん', 'ふつう', 'むずかしめ'].includes(variables.difficulty)) {
+            return res.status(400).json({ error: 'difficulty must be かんたん, ふつう, or むずかしめ' });
+        }
+        if (variables.avoidTopics !== undefined && (typeof variables.avoidTopics !== 'string' || variables.avoidTopics.length > 1000)) {
+            return res.status(400).json({ error: 'avoidTopics must be a string under 1000 characters' });
+        }
+        if (variables.variationSeed !== undefined && (typeof variables.variationSeed !== 'string' || variables.variationSeed.length > 40)) {
+            return res.status(400).json({ error: 'variationSeed must be a string under 40 characters' });
         }
 
-        // prompt.md のテンプレート変数 ${key} をリクエストの値で置換する
         const finalPrompt = fillTemplate(promptTemplate, variables);
 
         let result;
         if (PROVIDER === 'openai') {
-            result = await callOpenAI(finalPrompt);
+            result = await callOpenAI(finalPrompt, 8000);
         } else if (PROVIDER === 'gemini') {
             result = await callGemini(finalPrompt);
         } else {
@@ -81,7 +70,7 @@ app.post('/api/', async (req, res) => {
     }
 });
 
-// prompt.md 内の ${key} を variables の値で安全に置換する
+// プロンプト内の ${key} を variables の値で置換する
 function fillTemplate(template, variables) {
     return template.replace(/\$\{(\w+)\}/g, (match, key) => {
         return Object.prototype.hasOwnProperty.call(variables, key)
@@ -90,7 +79,7 @@ function fillTemplate(template, variables) {
     });
 }
 
-async function callOpenAI(prompt) {
+async function callOpenAI(prompt, maxCompletionTokens = 2000) {
     const apiKey = process.env.OPENAI_API_KEY;
     if (!apiKey) {
         throw new Error('OPENAI_API_KEY environment variable is not set');
@@ -107,7 +96,7 @@ async function callOpenAI(prompt) {
             messages: [
                 { role: 'system', content: prompt }
             ],
-            max_completion_tokens: 2000,
+            max_completion_tokens: maxCompletionTokens,
             response_format: { type: "json_object" }
         })
     });
@@ -118,7 +107,18 @@ async function callOpenAI(prompt) {
     }
 
     const data = await response.json();
-    const responseText = data.choices[0].message.content;
+    const choice = data.choices?.[0];
+    if (!choice) {
+        throw new Error('OpenAI response did not contain a completion choice');
+    }
+    if (choice.finish_reason === 'length') {
+        throw new Error(`OpenAI response was truncated at ${maxCompletionTokens} completion tokens`);
+    }
+
+    const responseText = choice.message?.content;
+    if (!responseText) {
+        throw new Error(`OpenAI returned an empty response (finish_reason: ${choice.finish_reason || 'unknown'})`);
+    }
     return extractArray(responseText);
 }
 
